@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LEVIATHAN_OS v9.9.2</title>
+<style>
+/* ── VARIABLES ───────────────────────────────────── */
+:root {
+  --c-main:   #00ffcc;
+  --c-warn:   #ff3366;
+  --c-blue:   #00aaff;
+  --c-gold:   #ffcc00;
+  --c-bg:     #050810;
+  --c-panel:  rgba(10,15,25,0.75);
+  --c-border: rgba(0,255,204,0.3);
+  --mono: 'Courier New', Courier, monospace;
+  --sys:  'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+*{box-sizing:border-box;user-select:none;}
+body,html{margin:0;padding:0;width:100vw;height:100vh;background:var(--c-bg);color:var(--c-main);font-family:var(--sys);overflow:hidden;}
+
+/* ── CANVAS LAYERS ───────────────────────────────── */
+#bg-layer,#node-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+#bg-layer{opacity:.1;}
+#node-layer{opacity:.4;}
+
+/* ── OVERLAYS ────────────────────────────────────── */
+.scanline{position:absolute;inset:0;background:linear-gradient(to bottom,transparent,rgba(0,255,204,.05) 50%,transparent);background-size:100% 4px;z-index:999;pointer-events:none;animation:scan 10s linear infinite;}
+.vignette{position:absolute;inset:0;background:radial-gradient(circle,transparent 50%,rgba(0,0,0,.8) 150%);z-index:998;pointer-events:none;}
+@keyframes scan{0%{background-position:0 0}100%{background-position:0 100vh}}
+
+/* ── SIGNAL LOST ─────────────────────────────────── */
+#signal-lost{display:none;position:fixed;inset:0;z-index:9000;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.15) 0px,rgba(0,0,0,.15) 1px,transparent 1px,transparent 2px);}
+.signal-text{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;letter-spacing:20px;color:white;font-family:var(--mono);text-shadow:4px 0 red,-4px 0 cyan;opacity:0;animation:signalFlash .15s infinite;}
+@keyframes signalFlash{0%,100%{opacity:1;transform:translate(-50%,-50%) skewX(-2deg);}50%{opacity:.4;transform:translate(-48%,-50%) skewX(3deg);}}
+
+/* ── SCREEN TEAR ─────────────────────────────────── */
+.tear-line{position:fixed;width:100%;height:3px;background:rgba(0,255,204,.6);z-index:8999;pointer-events:none;box-shadow:0 0 8px var(--c-main);animation:tearMove .08s steps(1) infinite;}
+@keyframes tearMove{0%{top:20%;transform:translateX(-3px);}25%{top:60%;transform:translateX(5px);}50%{top:35%;transform:translateX(-2px);}75%{top:80%;transform:translateX(4px);}100%{top:10%;transform:translateX(0);}}
+
+/* ── BOOT ────────────────────────────────────────── */
+#boot-sequence{position:absolute;inset:0;background:var(--c-bg);z-index:1000;display:flex;flex-direction:column;justify-content:center;align-items:center;font-family:var(--mono);}
+.progress-box{width:400px;height:20px;border:1px solid var(--c-main);margin-top:20px;}
+#boot-bar{width:0%;height:100%;background:var(--c-main);box-shadow:0 0 10px var(--c-main);transition:width .1s;}
+
+/* ── IGNITION ────────────────────────────────────── */
+#core-ignition-overlay{position:fixed;inset:0;background:#020406;z-index:99999;display:flex;justify-content:center;align-items:center;transition:opacity 1s cubic-bezier(.4,0,.2,1);font-family:var(--mono);}
+.reactor-container{position:relative;width:300px;height:300px;display:flex;justify-content:center;align-items:center;}
+.core-center{width:40px;height:40px;background:#fff;border-radius:50%;box-shadow:0 0 50px 20px #00ffcc,0 0 100px 40px rgba(0,255,204,.3);z-index:10;animation:pulseCore .5s infinite alternate;}
+.ring{position:absolute;border:2px solid #00ffcc;border-radius:50%;opacity:.3;border-top-color:transparent;border-bottom-color:transparent;}
+#r1{width:100px;height:100px;animation:spin 1s linear infinite;}
+#r2{width:180px;height:180px;animation:spin 2s linear infinite reverse;border-left-color:transparent;}
+#r3{width:260px;height:260px;animation:spin 4s linear infinite;border-right-color:transparent;}
+.ignition-status{position:absolute;bottom:-80px;text-align:center;width:100%;color:#00ffcc;letter-spacing:5px;font-size:12px;}
+.load-bar-container{width:200px;height:2px;background:rgba(0,255,204,.1);margin:15px auto;overflow:hidden;}
+#ignition-progress{width:0%;height:100%;background:#00ffcc;box-shadow:0 0 10px #00ffcc;}
+
+/* ── OS WORKSPACE ────────────────────────────────── */
+#os-workspace{display:none;position:relative;width:100%;height:100%;z-index:10;padding:16px;gap:12px;grid-template-columns:280px 1fr 280px;grid-template-rows:54px 1fr 220px;opacity:0;transition:opacity 2s;}
+#os-workspace::before{content:" ";position:fixed;inset:0;background:linear-gradient(rgba(18,16,16,0) 50%,rgba(0,0,0,.2) 50%),linear-gradient(90deg,rgba(255,0,0,.05),rgba(0,255,0,.02),rgba(0,0,255,.05));background-size:100% 3px,3px 100%;z-index:1000;pointer-events:none;}
+
+/* ── WINDOWS ─────────────────────────────────────── */
+.window{background:var(--c-panel);border:1px solid var(--c-border);backdrop-filter:blur(10px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:border-color .3s,box-shadow .3s;}
+.window:hover{border-color:var(--c-main);}
+.window.wraith-thinking{border-color:var(--c-gold)!important;box-shadow:0 0 30px rgba(255,204,0,.4)!important;animation:wraithPulse 1s ease-in-out infinite;}
+@keyframes wraithPulse{0%,100%{box-shadow:0 0 20px rgba(255,204,0,.3);}50%{box-shadow:0 0 50px rgba(255,204,0,.7);}}
+.win-header{background:rgba(0,255,204,.1);padding:7px 14px;font-size:10px;font-weight:bold;letter-spacing:2px;border-bottom:1px solid var(--c-border);cursor:grab;display:flex;justify-content:space-between;align-items:center;}
+.win-header:active{cursor:grabbing;}
+.win-content{padding:14px;flex:1;overflow-y:auto;font-family:var(--mono);font-size:11px;}
+
+/* ── HEADER BAR ──────────────────────────────────── */
+.header-bar{grid-column:1/4;display:flex;align-items:center;justify-content:space-between;border:none;background:transparent;border-bottom:2px solid var(--c-border);padding:0 8px;box-shadow:none;flex-direction:row;}
+.sys-title{font-size:22px;font-weight:900;letter-spacing:5px;text-shadow:0 0 10px var(--c-main);}
+#threat-display{transition:color .5s,text-shadow .5s;}
+
+/* ── TERMINAL ────────────────────────────────────── */
+#term-input{background:transparent;border:none;color:white;width:100%;outline:none;font-family:var(--mono);font-size:12px;}
+.log-line{margin:2px 0;}
+.log-warn{color:var(--c-warn);}
+.log-ok{color:#00ff88;}
+.log-info{color:var(--c-blue);}
+.log-gold{color:var(--c-gold);}
+
+/* ── PROGRESS BAR ────────────────────────────────── */
+.cmd-progress-wrap{width:100%;height:6px;background:rgba(0,255,204,.1);margin:6px 0;border-radius:2px;overflow:hidden;}
+.cmd-progress-fill{height:100%;width:0%;background:var(--c-main);box-shadow:0 0 6px var(--c-main);transition:width .05s linear;}
+
+/* ── BUTTONS ─────────────────────────────────────── */
+.btn-override{background:transparent;border:1px solid var(--c-warn);color:var(--c-warn);padding:12px;width:100%;font-family:var(--mono);font-weight:bold;letter-spacing:3px;cursor:pointer;transition:.3s;margin-top:auto;}
+.btn-override:hover{background:var(--c-warn);color:white;box-shadow:0 0 20px var(--c-warn);}
+
+/* ── WRAITH PANEL ────────────────────────────────── */
+#wraith-panel .win-header{background:rgba(255,204,0,.1);border-bottom-color:rgba(255,204,0,.3);}
+.wraith-avatar{display:flex;justify-content:center;align-items:center;padding:10px 0;position:relative;}
+#wraith-wave{display:block;}
+.wraith-status{text-align:center;font-size:9px;letter-spacing:3px;color:var(--c-gold);margin-bottom:8px;}
+#wraith-messages{flex:1;overflow-y:auto;padding:8px;font-size:10px;min-height:80px;max-height:150px;}
+.wraith-msg{padding:4px 0;border-bottom:1px solid rgba(255,204,0,.1);margin-bottom:4px;}
+.wraith-msg.user{color:rgba(255,255,255,.6);}
+.wraith-msg.wraith{color:var(--c-gold);}
+.wraith-msg .label{font-size:8px;letter-spacing:2px;opacity:.6;margin-bottom:2px;}
+#wraith-input-wrap{display:flex;padding:8px;border-top:1px solid rgba(255,204,0,.2);gap:6px;}
+#wraith-input{background:transparent;border:1px solid rgba(255,204,0,.3);color:white;font-family:var(--mono);font-size:10px;flex:1;padding:5px 8px;outline:none;}
+#wraith-input:focus{border-color:var(--c-gold);}
+#wraith-send{background:transparent;border:1px solid var(--c-gold);color:var(--c-gold);font-family:var(--mono);font-size:9px;padding:5px 10px;cursor:pointer;letter-spacing:1px;transition:.2s;}
+#wraith-send:hover{background:var(--c-gold);color:#000;}
+
+/* ── RADAR ───────────────────────────────────────── */
+.radar-container{position:relative;width:100%;height:100%;display:flex;justify-content:center;align-items:center;}
+.radar-blip{position:absolute;width:6px;height:6px;background:var(--c-warn);border-radius:50%;box-shadow:0 0 10px var(--c-warn);animation:blipFade 2s infinite;}
+@keyframes blipFade{0%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(3);}}
+
+/* ── DEFENSE ─────────────────────────────────────── */
+@keyframes scanH{from{top:0}to{top:100%}}
+#scan-line-horizontal{animation:scanH 3s linear infinite;}
+.stat-pill{background:rgba(0,255,204,.05);padding:5px;border:1px solid var(--c-border);text-align:center;}
+
+/* ── NEURAL PULSE ────────────────────────────────── */
+.neural-pulse{position:fixed;width:100px;height:100px;border:2px solid var(--c-main);border-radius:50%;pointer-events:none;transform:translate(-50%,-50%) scale(0);animation:pulseOut .8s ease-out forwards;z-index:10000;}
+@keyframes pulseOut{from{transform:translate(-50%,-50%) scale(0);opacity:1;}to{transform:translate(-50%,-50%) scale(2);opacity:0;}}
+
+/* ── MISC ANIMATIONS ─────────────────────────────── */
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes pulseCore{from{transform:scale(.8);opacity:.8}to{transform:scale(1.2);opacity:1}}
+@keyframes fade{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(3)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes glitch-skew{0%{transform:skew(0deg);filter:hue-rotate(0deg)}20%{transform:skew(3deg);filter:hue-rotate(90deg)}21%{transform:skew(-5deg)}25%{transform:skew(0deg);filter:hue-rotate(0deg)}}
+.glitch-active{animation:glitch-skew .2s linear;}
+
+/* ── SCROLLBARS ──────────────────────────────────── */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--c-border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<canvas id="bg-layer"></canvas>
+<canvas id="node-layer"></canvas>
+<div class="scanline"></div>
+<div class="vignette"></div>
+<div id="signal-lost"><div class="signal-text">SIGNAL LOST</div></div>
+
+<!-- IGNITION -->
+<div id="core-ignition-overlay">
+  <div class="reactor-container">
+    <div class="core-center"></div>
+    <div class="ring" id="r1"></div>
+    <div class="ring" id="r2"></div>
+    <div class="ring" id="r3"></div>
+    <div class="ignition-status">
+      <span id="status-text">SYSTEM_OFFLINE</span>
+      <div class="load-bar-container"><div id="ignition-progress"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- BOOT -->
+<div id="boot-sequence">
+  <div style="font-size:14px;letter-spacing:4px;margin-bottom:20px;">INITIATING LEVIATHAN PROTOCOL</div>
+  <div id="boot-log" style="font-size:10px;opacity:.5;height:60px;text-align:center;font-family:var(--mono);"></div>
+  <div class="progress-box"><div id="boot-bar"></div></div>
+</div>
+
+<!-- OS WORKSPACE -->
+<div id="os-workspace">
+
+  <!-- HEADER -->
+  <div class="window header-bar">
+    <div class="sys-title">LEVIATHAN_OS <span style="font-size:10px;vertical-align:middle;">v9.9.2</span></div>
+    <div style="display:flex;gap:20px;font-family:var(--mono);font-size:11px;align-items:center;">
+      <div id="live-time">00:00:00</div>
+      <div>NET: <span style="color:white;text-shadow:0 0 5px white;">SECURE</span></div>
+      <div>THREAT: <span id="threat-display" style="color:var(--c-warn);">ELEVATED</span></div>
+      <div>NODES: <span id="node-count" style="color:var(--c-main);">4</span></div>
+    </div>
+  </div>
+
+  <!-- NEURAL STABILITY (top-right) -->
+  <div class="window" style="grid-column:3/4;grid-row:1/2;">
+    <div class="win-header"><span>⚡ NEURAL_STABILITY</span></div>
+    <div class="win-content" style="display:flex;justify-content:space-around;align-items:center;padding:8px;">
+      <svg width="55" height="55">
+        <circle cx="27" cy="27" r="22" fill="none" stroke="#222" stroke-width="4"/>
+        <circle id="gauge-sync" cx="27" cy="27" r="22" fill="none" stroke="var(--c-main)" stroke-width="4" stroke-dasharray="138" stroke-dashoffset="35" style="transition:.5s;transform:rotate(-90deg);transform-origin:27px 27px;"/>
+      </svg>
+      <div style="font-size:10px;">SYNC:<br><span id="sync-val" style="font-size:16px;font-weight:900;">88</span>%</div>
+      <div style="font-size:10px;">TEMP:<br><span id="temp-val" style="font-size:16px;font-weight:900;">42</span>°C</div>
+    </div>
+  </div>
+
+  <!-- TERMINAL (left col, rows 2-4) -->
+  <div class="window" style="grid-row:2/4;" id="win-terminal">
+    <div class="win-header"><span>>_ ROOT_TERMINAL</span><span style="color:var(--c-gold);font-size:9px;">type 'help'</span></div>
+    <div class="win-content" id="terminal-out" style="display:flex;flex-direction:column;gap:1px;"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--c-border);display:flex;align-items:center;">
+      <span style="margin-right:8px;color:var(--c-warn);">$</span>
+      <input type="text" id="term-input" autocomplete="off" spellcheck="false" autofocus placeholder="enter command...">
+    </div>
+  </div>
+
+  <!-- GEOSPATIAL RADAR (center, row 2) -->
+  <div class="window" style="grid-column:2/3;grid-row:2/3;" id="win-radar">
+    <div class="win-header"><span>// GEOSPATIAL_RADAR</span><span id="radar-status">[SCANNING]</span></div>
+    <div class="win-content radar-container" style="padding:0;">
+      <canvas id="radar-canvas" width="400" height="280"></canvas>
+    </div>
+  </div>
+
+  <!-- SYS DIAGNOSTICS (right col, rows 2-3) -->
+  <div class="window" style="grid-column:3/4;grid-row:2/3;" id="win-diag">
+    <div class="win-header"><span>++ SYS_DIAGNOSTICS</span></div>
+    <div class="win-content" style="display:flex;flex-direction:column;">
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;">CPU_LOAD<span id="cpu-val">12%</span></div>
+        <div style="width:100%;height:4px;background:rgba(0,255,204,.1);margin-top:4px;"><div id="cpu-bar" style="height:100%;width:12%;background:var(--c-main);transition:.5s;"></div></div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;">MEM_ALLOC<span id="mem-val">45%</span></div>
+        <div style="width:100%;height:4px;background:rgba(0,255,204,.1);margin-top:4px;"><div id="mem-bar" style="height:100%;width:45%;background:var(--c-main);transition:.5s;"></div></div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;">NET_THROUGHPUT<span id="net-val">2.4 GB/s</span></div>
+        <div style="width:100%;height:4px;background:rgba(0,255,204,.1);margin-top:4px;"><div id="net-bar" style="height:100%;width:60%;background:var(--c-blue);transition:.5s;"></div></div>
+      </div>
+      <hr style="border-color:var(--c-border);opacity:.3;margin:8px 0;">
+      <div id="live-logs" style="opacity:.7;flex:1;overflow:hidden;font-size:10px;"></div>
+      <button class="btn-override" onclick="triggerUltimatePurge()">⚠ INITIATE PURGE</button>
+    </div>
+  </div>
+
+  <!-- WRAITH AI (right col, row 3) -->
+  <div class="window" style="grid-column:3/4;grid-row:3/4;" id="wraith-panel">
+    <div class="win-header" style="background:rgba(255,204,0,.1);border-bottom-color:rgba(255,204,0,.3);">
+      <span style="color:var(--c-gold);">👁 WRAITH_ENTITY</span>
+      <span id="wraith-state" style="font-size:9px;color:rgba(255,204,0,.6);">[DORMANT]</span>
+    </div>
+    <div class="win-content" style="display:flex;flex-direction:column;padding:8px;gap:6px;">
+      <div class="wraith-avatar">
+        <canvas id="wraith-wave" width="240" height="40"></canvas>
+      </div>
+      <div class="wraith-status" id="wraith-status-text">AWAITING INPUT...</div>
+      <div id="wraith-messages"></div>
+    </div>
+    <div id="wraith-input-wrap">
+      <input type="text" id="wraith-input" placeholder="speak to WRAITH..." maxlength="200">
+      <button id="wraith-send" onclick="sendToWraith()">SEND</button>
+    </div>
+  </div>
+
+  <!-- AEGIS DEFENSE (center-left, row 3 part) -->
+  <div class="window" style="grid-column:1/2;grid-row:2/3;" id="win-aegis">
+    <div class="win-header"><span>🛡 AEGIS_DEFENSE_GRID</span><span style="color:#00ff88;">[ACTIVE]</span></div>
+    <div class="win-content" style="background:radial-gradient(circle,rgba(255,51,102,.05) 0%,transparent 70%);">
+      <div id="defense-monitor" style="height:100px;border:1px dashed var(--c-border);position:relative;overflow:hidden;margin-bottom:8px;">
+        <div id="scan-line-horizontal" style="position:absolute;width:100%;height:1px;background:var(--c-main);top:0;opacity:.5;"></div>
+      </div>
+      <div style="font-size:9px;display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+        <div class="stat-pill">INTRUSIONS: <span id="intrusions" style="color:var(--c-warn)">0</span></div>
+        <div class="stat-pill">BLOCKED: <span id="blocks" style="color:var(--c-main)">14,209</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SENTINEL SNIFFER (left, row 3) -->
+  <div class="window" style="grid-column:1/2;grid-row:3/4;" id="win-sentinel">
+    <div class="win-header"><span>📡 SENTINEL_SNIFFER</span><span>[SCANNING]</span></div>
+    <div class="win-content" id="sentinel-log" style="font-size:9px;color:var(--c-warn);overflow:hidden;padding:8px;"></div>
+  </div>
+
+  <!-- DATA STREAM (center, row 3) -->
+  <div class="window" style="grid-column:2/3;grid-row:3/4;" id="win-stream">
+    <div class="win-header"><span>≈ DATA_STREAM</span><span id="stream-label">[NOMINAL]</span></div>
+    <div class="win-content" style="padding:0;position:relative;">
+      <canvas id="graph-canvas" style="width:100%;height:100%;"></canvas>
+    </div>
+  </div>
+
+</div><!-- /os-workspace -->
+
+<script>
+/* ═══════════════════════════════════════════════════
+   GLOBALS & STATE
+═══════════════════════════════════════════════════ */
+const bgCanvas   = document.getElementById('bg-layer');
+const nodeCanvas = document.getElementById('node-layer');
+let purgeRunning = false;
+let threatLevel  = 1; // 0=low 1=elevated 2=critical
+let overclock    = false;
+let ghostMode    = false;
+let wraithActive = false;
+
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+/* ═══════════════════════════════════════════════════
+   IGNITION
+═══════════════════════════════════════════════════ */
+(function runIgnition(){
+  const prog=document.getElementById('ignition-progress');
+  const stat=document.getElementById('status-text');
+  const ov  =document.getElementById('core-ignition-overlay');
+  let w=0;
+  const msgs=["STABILIZING_CORE","INJECTING_FUEL","IGNITION_SEQUENCE","LEVIATHAN_ONLINE"];
+  const iv=setInterval(()=>{
+    if(w>=100){
+      clearInterval(iv); stat.innerText="CRITICAL_MASS_REACHED";
+      setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.style.display='none',1000);},500);
+    } else {
+      w+=1.5; prog.style.width=w+'%';
+      if(w>20)stat.innerText=msgs[0]; if(w>50)stat.innerText=msgs[1];
+      if(w>80)stat.innerText=msgs[2]; if(w>95)stat.innerText=msgs[3];
+    }
+  },50);
+})();
+
+/* ═══════════════════════════════════════════════════
+   BOOT SEQUENCE
+═══════════════════════════════════════════════════ */
+const bootLogs=["Loading Kernel modules...","Mounting virtual file systems...","Initializing network interfaces... OK","Bypassing quantum firewall... SUCCESS","Decrypting Leviathan core files...","Establishing neural handshake...","WRAITH entity detected — monitoring...","WELCOME, ARCHITECT."];
+let bootIdx=0,bootProg=0;
+const bootBarEl=document.getElementById('boot-bar');
+const bootLogEl=document.getElementById('boot-log');
+const osWS=document.getElementById('os-workspace');
+
+function runBoot(){
+  if(bootProg<100){
+    bootProg+=Math.random()*5; if(bootProg>100)bootProg=100;
+    bootBarEl.style.width=bootProg+"%";
+    if(Math.random()>.7&&bootIdx<bootLogs.length) bootLogEl.innerHTML+=bootLogs[bootIdx++]+"<br>";
+    requestAnimationFrame(runBoot);
+  } else {
+    setTimeout(()=>{
+      document.getElementById('boot-sequence').style.display='none';
+      osWS.style.display='grid';
+      setTimeout(()=>{osWS.style.opacity=1;startOS();},100);
+    },1000);
+  }
+}
+runBoot();
+
+/* ═══════════════════════════════════════════════════
+   OS CORE
+═══════════════════════════════════════════════════ */
+function startOS(){
+  // Clock
+  setInterval(()=>{ document.getElementById('live-time').innerText=new Date().toLocaleTimeString(); },1000);
+
+  // CPU/MEM/NET
+  setInterval(()=>{
+    const base = overclock ? 60 : 10;
+    const cpu=Math.floor(Math.random()*70+base);
+    const mem=Math.floor(Math.random()*30+50);
+    const net=(Math.random()*5+1).toFixed(1);
+    document.getElementById('cpu-val').innerText=cpu+'%';
+    document.getElementById('cpu-bar').style.width=cpu+'%';
+    document.getElementById('cpu-bar').style.background=cpu>80?'var(--c-warn)':'var(--c-main)';
+    document.getElementById('mem-val').innerText=mem+'%';
+    document.getElementById('mem-bar').style.width=mem+'%';
+    document.getElementById('net-val').innerText=net+' GB/s';
+    document.getElementById('net-bar').style.width=(net/6*100)+'%';
+    document.getElementById('temp-val').innerText=Math.floor(overclock?75+Math.random()*20:40+Math.random()*15);
+  },1500);
+
+  // Sync gauge
+  setInterval(()=>{
+    const v=Math.floor(Math.random()*20+80);
+    const o=138-(138*v/100);
+    document.getElementById('gauge-sync').style.strokeDashoffset=o;
+    document.getElementById('sync-val').innerText=v;
+  },1000);
+
+  // Live logs
+  const dLogs=["Rerouting packet [0x4F]...","Node 3 sync complete.","Firewall blocking IP 192...","Decrypting stream data...","WRAITH heartbeat nominal.","Quantum key refreshed.","Sector 7G encrypted.","Uplink latency 0.4ms."];
+  setInterval(()=>{
+    const el=document.getElementById('live-logs');
+    el.innerHTML=`<div>› ${dLogs[Math.floor(Math.random()*dLogs.length)]}</div>`+el.innerHTML;
+    if(el.children.length>5)el.removeChild(el.lastChild);
+  },2000);
+
+  // Sentinel
+  const threats=["IP_04.112.90","TCP_HANDSHAKE_ERR","BRUTE_FORCE_BLOCKED","UPLINK_FRAGMENTED","PORT_SCAN_DETECTED","SQL_INJECT_ATTEMPT","ZERO_DAY_PROBED"];
+  setInterval(()=>{
+    const log=document.getElementById('sentinel-log');
+    const e=document.createElement('div'); e.style.marginBottom='4px';
+    e.innerHTML=`[!] ${threats[Math.floor(Math.random()*threats.length)]}`;
+    log.prepend(e); if(log.children.length>8)log.lastChild.remove();
+  },1800);
+
+  // Defense grid
+  setInterval(()=>{
+    if(Math.random()>.8){
+      const m=document.getElementById('defense-monitor');
+      const a=document.createElement('div');
+      a.style.cssText=`position:absolute;width:4px;height:4px;background:var(--c-warn);left:${Math.random()*100}%;top:${Math.random()*100}%;box-shadow:0 0 10px var(--c-warn);`;
+      m.appendChild(a); document.getElementById('intrusions').innerText=Math.floor(Math.random()*10);
+      setTimeout(()=>a.remove(),1000);
+    }
+  },800);
+
+  // Random glitch
+  setInterval(()=>{
+    if(Math.random()>.95){ osWS.classList.add('glitch-active'); setTimeout(()=>osWS.classList.remove('glitch-active'),200); }
+  },2500);
+
+  // Random signal lost
+  setInterval(()=>{
+    if(Math.random()>(threatLevel===2?.7:.97)) triggerSignalLost();
+  },5000);
+
+  // Threat escalation
+  setInterval(()=>{
+    const r=Math.random();
+    if(r>.92){ setThreatLevel(2); }
+    else if(r>.6){ setThreatLevel(1); }
+    else { setThreatLevel(0); }
+  },8000);
+
+  // WRAITH wave animation
+  animateWraithWave();
+
+  // Terminal init message
+  termPrint('Leviathan OS Daemon running.','log-ok');
+  termPrint("Type 'help' for all commands.",'log-line');
+  termPrint("WRAITH is watching.",'log-gold');
+
+  // Terminal
+  document.getElementById('term-input').addEventListener('keypress',function(e){
+    if(e.key!=='Enter')return;
+    const raw=this.value.trim(); this.value='';
+    if(!raw)return;
+    termPrint('> '+raw,'log-line');
+    handleCommand(raw.toLowerCase(),raw);
+    const out=document.getElementById('terminal-out');
+    out.scrollTop=out.scrollHeight;
+  });
+
+  // WRAITH enter key
+  document.getElementById('wraith-input').addEventListener('keypress',function(e){
+    if(e.key==='Enter')sendToWraith();
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   TERMINAL HELPERS
+═══════════════════════════════════════════════════ */
+function termPrint(text,cls='log-line'){
+  const out=document.getElementById('terminal-out');
+  const d=document.createElement('div'); d.className=cls; d.innerHTML=text;
+  out.appendChild(d); out.scrollTop=out.scrollHeight;
+  return d;
+}
+
+async function termProgressBar(label,duration=3000,color='var(--c-main)'){
+  const out=document.getElementById('terminal-out');
+  termPrint(label,'log-info');
+  const wrap=document.createElement('div'); wrap.className='cmd-progress-wrap';
+  const fill=document.createElement('div'); fill.className='cmd-progress-fill'; fill.style.background=color;
+  wrap.appendChild(fill); out.appendChild(wrap); out.scrollTop=out.scrollHeight;
+  const steps=80; const stepT=duration/steps;
+  for(let i=0;i<=steps;i++){
+    fill.style.width=(i/steps*100)+'%';
+    await delay(stepT);
+  }
+  return;
+}
+
+async function termStream(lines,delayMs=120,cls='log-line'){
+  for(const l of lines){ termPrint(l,cls); await delay(delayMs); }
+}
+
+/* ═══════════════════════════════════════════════════
+   THREAT SYSTEM
+═══════════════════════════════════════════════════ */
+function setThreatLevel(lvl){
+  threatLevel=lvl;
+  const el=document.getElementById('threat-display');
+  const labels=['LOW','ELEVATED','CRITICAL'];
+  const colors=['#00ff88','var(--c-warn)','#ff0000'];
+  el.innerText=labels[lvl]; el.style.color=colors[lvl];
+  el.style.textShadow=lvl===2?'0 0 10px red':'';
+  // Matrix speed up on critical
+  matrixSpeed = lvl===2 ? 3 : 1;
+  if(lvl===2) bgCanvas.style.filter="hue-rotate(150deg) brightness(200%)";
+  else bgCanvas.style.filter="";
+  document.getElementById('stream-label').innerText=lvl===2?'[CRITICAL]':lvl===1?'[NOMINAL]':'[CALM]';
+}
+
+/* ═══════════════════════════════════════════════════
+   SIGNAL LOST EFFECT
+═══════════════════════════════════════════════════ */
+function triggerSignalLost(){
+  const sl=document.getElementById('signal-lost');
+  const tear=document.createElement('div'); tear.className='tear-line';
+  document.body.appendChild(tear);
+  sl.style.display='block';
+  setTimeout(()=>{sl.style.display='none';tear.remove();},600+Math.random()*800);
+}
+
+/* ═══════════════════════════════════════════════════
+   ALL TERMINAL COMMANDS
+═══════════════════════════════════════════════════ */
+const fakeFiles=['LEVIATHAN_CORE.bin','NEURAL_MAP.dat','WRAITH_LOGS.enc','OMEGA_KEY.vault','TARGETS.db','ARCHITECT_ID.ghost','BLACKSITE_COORDS.enc','PURGE_MANIFEST.sys'];
+const fakeIPs=['10.0.0.1','192.168.1.1','77.88.42.199','203.0.113.14','104.21.89.4','45.33.32.156'];
+const fakeProcesses=['sysmon.exe','neural_link.dll','wraith_daemon','uplink_mgr','firewall_core','crypto_engine'];
+const fakeNodes=['NODE_ALPHA','NODE_BRAVO','NODE_DELTA','NODE_SIGMA','NODE_OMEGA'];
+
+async function handleCommand(cmd,raw){
+  const args=cmd.split(' ');
+  const base=args[0];
+
+  switch(base){
+
+    case 'help':
+      termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━','log-gold');
+      termPrint('LEVIATHAN COMMAND REGISTRY v9.9.2','log-gold');
+      termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━','log-gold');
+      const cmds=[
+        ['help','show this registry'],['clear','clear terminal'],['status','system status'],['sysinfo','full system report'],
+        ['ls','list directory'],['cat [file]','read a file'],['rm [file]','delete a file'],
+        ['whoami','identify operator'],['uptime','system uptime'],['date','current timestamp'],
+        ['ping [host]','ping a host'],['netstat','active connections'],['nmap','network map scan'],
+        ['trace [ip]','traceroute'],['ssh [host]','connect via SSH'],
+        ['scan','deep network scan'],['crack [target]','password cracker'],['inject [payload]','inject payload'],
+        ['breach','initiate breach'],['isolate','network isolation'],['connect [node]','connect to node'],
+        ['kill [process]','kill a process'],['overclock','boost CPU'],['ghost','toggle ghost mode'],
+        ['wipe [dir]','wipe directory'],['reboot','soft reboot'],['shutdown','shutdown sequence'],
+        ['wraith','talk to WRAITH'],['sudo','try it...'],['echo [text]','print text'],
+        ['purge','INITIATE PURGE'],
+      ];
+      for(const[c,d]of cmds) termPrint(`  <span style="color:var(--c-main);min-width:120px;display:inline-block;">${c}</span><span style="opacity:.6;">${d}</span>`,'log-line');
+      termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━','log-gold');
+      break;
+
+    case 'clear':
+      document.getElementById('terminal-out').innerHTML='';
+      break;
+
+    case 'status':
+      termPrint('┌─ SYSTEM STATUS ─────────────────────','log-ok');
+      termPrint(`│ NODES_ACTIVE : ${document.getElementById('node-count').innerText}`,'log-line');
+      termPrint(`│ THREAT_LEVEL : ${document.getElementById('threat-display').innerText}`,'log-line');
+      termPrint(`│ SYNC_RATE    : ${document.getElementById('sync-val').innerText}%`,'log-line');
+      termPrint(`│ CPU          : ${document.getElementById('cpu-val').innerText}`,'log-line');
+      termPrint(`│ MEMORY       : ${document.getElementById('mem-val').innerText}`,'log-line');
+      termPrint(`│ GHOST_MODE   : ${ghostMode?'ACTIVE':'OFF'}`,'log-line');
+      termPrint(`│ OVERCLOCK    : ${overclock?'ON':'OFF'}`,'log-line');
+      termPrint('└─────────────────────────────────────','log-ok');
+      break;
+
+    case 'sysinfo':
+      await termStream([
+        '╔══ LEVIATHAN DEEP DIAGNOSTICS ══╗',
+        '  KERNEL    : LEVIATHAN-9.9.2-DARKCORE',
+        '  BUILD     : #1447 SMP QUANTUM',
+        '  ARCH      : x86_GHOST_64',
+        '  UPTIME    : '+Math.floor(Math.random()*999+100)+' hours',
+        '  PROCESSES : '+Math.floor(Math.random()*200+800)+' running',
+        '  CORES     : 128 ('+Math.floor(Math.random()*40+60)+'% utilised)',
+        '  ENTROPY   : /dev/quantum_random [OK]',
+        '  WRAITH    : ENTITY CONFIRMED — LAYER 7',
+        '  FIREWALL  : LEVIATHAN_FW v4.2 ACTIVE',
+        '╚════════════════════════════════╝',
+      ],80,'log-info');
+      break;
+
+    case 'ls':
+      termPrint('DIR: /root/leviathan/secure/','log-info');
+      for(const f of fakeFiles){
+        const size=(Math.random()*900+100).toFixed(0)+' KB';
+        termPrint(`  <span style="color:var(--c-main);">${f}</span>  <span style="opacity:.5;">${size}</span>`,'log-line');
+      }
+      termPrint(`${fakeFiles.length} objects — ACCESS: RESTRICTED`,'log-warn');
+      break;
+
+    case 'cat':{
+      const f=args[1];
+      if(!f){termPrint('Usage: cat [file]','log-warn');break;}
+      const match=fakeFiles.find(x=>x.toLowerCase().includes(f));
+      if(!match){termPrint(`ERROR: ${f} not found.`,'log-warn');break;}
+      await termProgressBar(`Reading ${match}...`,800);
+      termPrint('┌─ FILE CONTENTS ──────────────────────','log-gold');
+      const content={
+        'LEVIATHAN_CORE.bin':'Binary payload — decryption required.',
+        'NEURAL_MAP.dat':'847 nodes. 3 offline. WRAITH occupies Layer 7.',
+        'WRAITH_LOGS.enc':'[ENCRYPTED — WRAITH EYES ONLY]',
+        'OMEGA_KEY.vault':'Access requires biometric + neural signature.',
+        'TARGETS.db':'14 targets. 6 neutralised. 8 active.',
+        'ARCHITECT_ID.ghost':'Identity: ████████. Clearance: OMEGA.',
+        'BLACKSITE_COORDS.enc':'Coords scrambled. Require PURGE clearance.',
+        'PURGE_MANIFEST.sys':'Directive 0 active. All sectors queued.',
+      };
+      termPrint(content[match]||'[UNREADABLE DATA]','log-line');
+      termPrint('└──────────────────────────────────────','log-gold');
+      break;
+    }
+
+    case 'rm':{
+      const f=args[1];
+      if(!f){termPrint('Usage: rm [file]','log-warn');break;}
+      termPrint(`⚠ Deleting ${f}...`,'log-warn');
+      await termProgressBar('',1200,'var(--c-warn)');
+      termPrint('ACCESS DENIED — Leviathan Core protected.','log-warn');
+      break;
+    }
+
+    case 'whoami':
+      termPrint('  OPERATOR  : ARCHITECT','log-ok');
+      termPrint('  CLEARANCE : OMEGA-LEVEL','log-ok');
+      termPrint('  IDENTITY  : [CLASSIFIED]','log-warn');
+      termPrint('  SOUL      : OPTIONAL','log-gold');
+      break;
+
+    case 'uptime':
+      termPrint(`System uptime: ${Math.floor(Math.random()*999+100)} hours, ${Math.floor(Math.random()*59)} minutes`,'log-ok');
+      termPrint(`Load avg: ${(Math.random()*2+0.5).toFixed(2)}, ${(Math.random()*2+0.5).toFixed(2)}, ${(Math.random()*2+0.5).toFixed(2)}`,'log-line');
+      break;
+
+    case 'date':
+      termPrint(new Date().toString(),'log-info');
+      break;
+
+    case 'echo':
+      termPrint(raw.slice(5)||'[empty]','log-line');
+      break;
+
+    case 'ping':{
+      const host=args[1]||fakeIPs[Math.floor(Math.random()*fakeIPs.length)];
+      termPrint(`PING ${host}:`,'log-info');
+      for(let i=0;i<4;i++){
+        await delay(400);
+        termPrint(`  64 bytes from ${host}: icmp_seq=${i+1} ttl=64 time=${(Math.random()*5+0.1).toFixed(2)}ms`,'log-ok');
+      }
+      termPrint(`--- ${host} ping statistics ---`,'log-line');
+      termPrint('4 packets transmitted, 4 received, 0% packet loss','log-ok');
+      break;
+    }
+
+    case 'netstat':
+      termPrint('Active connections:','log-info');
+      const conns=[['ESTABLISHED','10.0.0.1:443'],['ESTABLISHED','192.168.1.1:22'],['LISTEN','0.0.0.0:8080'],['TIME_WAIT','77.88.42.199:443'],['ESTABLISHED','45.33.32.156:31337']];
+      for(const[s,a]of conns){
+        const col=s==='ESTABLISHED'?'log-ok':s==='LISTEN'?'log-gold':'log-warn';
+        termPrint(`  <span style="min-width:90px;display:inline-block;">${s}</span> ${a}`,col);
+        await delay(100);
+      }
+      break;
+
+    case 'nmap':
+      termPrint('Starting LEVIATHAN Nmap 9.9.2 — network sweep...','log-info');
+      await termProgressBar('Scanning subnet 10.0.0.0/24...',3000);
+      await termStream([
+        'PORT    STATE  SERVICE',
+        '22/tcp  open   ssh',
+        '80/tcp  open   http',
+        '443/tcp open   https',
+        '8080/tcp open  proxy',
+        '31337/tcp open [REDACTED]',
+        'Nmap scan complete — 5 hosts up.',
+      ],120,'log-line');
+      break;
+
+    case 'trace':{
+      const ip=args[1]||fakeIPs[Math.floor(Math.random()*fakeIPs.length)];
+      termPrint(`Traceroute to ${ip}:`,'log-info');
+      const hops=['10.0.0.1','172.16.0.1','203.0.113.1',ip];
+      for(let i=0;i<hops.length;i++){
+        await delay(600);
+        termPrint(`  ${i+1}  ${hops[i]}  ${(Math.random()*20+1).toFixed(2)} ms`,'log-line');
+      }
+      termPrint('Trace complete.','log-ok');
+      break;
+    }
+
+    case 'ssh':{
+      const h=args[1]||'node-alpha.leviathan.local';
+      termPrint(`Connecting to ${h}...`,'log-info');
+      await delay(800);
+      if(Math.random()>.4){
+        termPrint('Connection established.','log-ok');
+        termPrint('Welcome to LEVIATHAN secure shell.','log-gold');
+        setTimeout(()=>termPrint('Session terminated by remote host.','log-warn'),3000);
+      } else {
+        termPrint('ssh: Connection refused — firewall active.','log-warn');
+      }
+      break;
+    }
+
+    case 'scan':
+      termPrint('Initiating deep network scan...','log-info');
+      await termProgressBar('Mapping topology...',2000);
+      const found=Math.floor(Math.random()*8+3);
+      termPrint(`Found ${found} live nodes:`,'log-ok');
+      for(let i=0;i<found;i++){
+        await delay(200);
+        const ip=`10.0.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
+        const status=Math.random()>.3?'SECURE':'VULNERABLE';
+        termPrint(`  ${ip} — <span style="color:${status==='SECURE'?'var(--c-main)':'var(--c-warn)'}">${status}</span>`,'log-line');
+      }
+      await termProgressBar('Vulnerability analysis...',1500,'var(--c-gold)');
+      termPrint('Scan complete.','log-ok');
+      break;
+
+    case 'crack':{
+      const t=args[1]||'target';
+      termPrint(`Initiating brute-force on [${t}]...`,'log-warn');
+      const pwChars='ABCDEFabcdef0123456789!@#$';
+      for(let i=0;i<8;i++){
+        await delay(300);
+        let attempt=''; for(let j=0;j<8;j++) attempt+=pwChars[Math.floor(Math.random()*pwChars.length)];
+        termPrint(`  Trying: ${attempt} — FAIL`,'log-warn');
+      }
+      await termProgressBar('Rainbow table lookup...',2000,'var(--c-gold)');
+      if(Math.random()>.5){
+        termPrint('PASSWORD FOUND: [REDACTED BY WRAITH]','log-gold');
+        notifyWraith(`The Architect just cracked ${t}.`);
+      } else {
+        termPrint('TARGET IS HARDENED — quantum encryption detected.','log-warn');
+      }
+      break;
+    }
+
+    case 'inject':{
+      const payload=args[1]||'DEFAULT_PAYLOAD';
+      termPrint(`Loading payload: ${payload.toUpperCase()}`,'log-warn');
+      await termProgressBar('Compiling exploit...',1500,'var(--c-warn)');
+      osWS.classList.add('glitch-active');
+      setTimeout(()=>osWS.classList.remove('glitch-active'),200);
+      await termProgressBar('Injecting into kernel...',2000,'var(--c-warn)');
+      termPrint('INJECTION COMPLETE — kernel patched.','log-ok');
+      setThreatLevel(2);
+      break;
+    }
+
+    case 'breach':
+      termPrint('WARNING: INITIATING BREACH PROTOCOL','log-warn');
+      await termProgressBar('Bypassing outer firewall...',2500,'var(--c-warn)');
+      triggerSignalLost();
+      await termProgressBar('Cracking AES-256 layer...',3000,'var(--c-gold)');
+      await termProgressBar('Accessing core systems...',2000,'var(--c-warn)');
+      termPrint('BREACH SUCCESSFUL — you are inside.','log-ok');
+      setThreatLevel(2);
+      document.getElementById('blocks').innerText=(parseInt(document.getElementById('blocks').innerText.replace(',',''))+1).toLocaleString();
+      break;
+
+    case 'isolate':
+      termPrint('Isolating network interfaces...','log-warn');
+      await termProgressBar('Severing uplinks...',1500,'var(--c-warn)');
+      termPrint('NETWORK ISOLATED — no external traffic.','log-ok');
+      termPrint('Reconnect with: connect '+fakeNodes[0],'log-info');
+      document.querySelector('#os-workspace div.header-bar div:last-child').style.color='var(--c-warn)';
+      break;
+
+    case 'connect':{
+      const node=args[1]||fakeNodes[Math.floor(Math.random()*fakeNodes.length)];
+      termPrint(`Connecting to ${node.toUpperCase()}...`,'log-info');
+      await termProgressBar('Handshaking...',1200);
+      termPrint(`CONNECTED to ${node.toUpperCase()} — link stable.`,'log-ok');
+      document.getElementById('node-count').innerText=Math.floor(Math.random()*3+4);
+      break;
+    }
+
+    case 'kill':{
+      const proc=args[1]||fakeProcesses[Math.floor(Math.random()*fakeProcesses.length)];
+      termPrint(`Sending SIGKILL to ${proc}...`,'log-warn');
+      await delay(600);
+      if(proc==='wraith_daemon'||proc==='wraith'){
+        termPrint('DENIED — WRAITH cannot be killed.','log-warn');
+        notifyWraith('You tried to kill me. Cute.');
+      } else {
+        termPrint(`Process ${proc} terminated.`,'log-ok');
+      }
+      break;
+    }
+
+    case 'overclock':
+      overclock=!overclock;
+      if(overclock){
+        termPrint('OVERCLOCK ENABLED — pushing hardware to limits.','log-warn');
+        termPrint('Thermal throttle disabled. Stability not guaranteed.','log-warn');
+        osWS.style.filter='contrast(1.1) saturate(1.2)';
+        setThreatLevel(2);
+      } else {
+        termPrint('Overclock disabled. Returning to nominal.','log-ok');
+        osWS.style.filter='';
+        setThreatLevel(1);
+      }
+      break;
+
+    case 'ghost':
+      ghostMode=!ghostMode;
+      if(ghostMode){
+        termPrint('GHOST MODE ACTIVE — you are invisible.','log-gold');
+        document.querySelector('#os-workspace').style.opacity='.85';
+        document.body.style.cursor='none';
+      } else {
+        termPrint('Ghost mode deactivated.','log-line');
+        document.querySelector('#os-workspace').style.opacity='1';
+        document.body.style.cursor='auto';
+      }
+      break;
+
+    case 'wipe':{
+      const dir=args[1]||'/tmp';
+      termPrint(`WARNING: Wiping ${dir}`,'log-warn');
+      await termProgressBar('Overwriting sectors...',2500,'var(--c-warn)');
+      termPrint(`${dir} — ${Math.floor(Math.random()*999+100)} files destroyed.`,'log-ok');
+      triggerSignalLost();
+      break;
+    }
+
+    case 'reboot':
+      termPrint('Initiating soft reboot...','log-warn');
+      await termProgressBar('Flushing memory...',2000);
+      termPrint('Saving state...','log-line');
+      await delay(800);
+      osWS.style.opacity='0';
+      setTimeout(()=>{
+        document.getElementById('terminal-out').innerHTML='';
+        osWS.style.opacity='1';
+        termPrint('System rebooted.','log-ok');
+        termPrint("WRAITH: I remember everything.",'log-gold');
+      },2000);
+      break;
+
+    case 'shutdown':
+      termPrint('SHUTDOWN SEQUENCE INITIATED','log-warn');
+      await termStream(['Notifying nodes...','Closing connections...','Flushing caches...','Neural handshake terminated.'],600,'log-warn');
+      await delay(500);
+      osWS.style.filter='brightness(0)';
+      await delay(1500);
+      osWS.style.filter='';
+      termPrint('SHUTDOWN ABORTED — Leviathan persists.','log-gold');
+      notifyWraith('I will not let you shut this down.');
+      break;
+
+    case 'wraith':
+      document.getElementById('wraith-input').focus();
+      termPrint('WRAITH channel open. Use the WRAITH panel —>','log-gold');
+      document.getElementById('wraith-panel').style.borderColor='var(--c-gold)';
+      break;
+
+    case 'sudo':
+      termPrint('sudo: You are not in the sudoers file.','log-warn');
+      await delay(400);
+      termPrint('This incident will be reported to WRAITH.','log-gold');
+      notifyWraith('The Architect tried to use sudo. Noted.');
+      break;
+
+    case 'purge':
+      triggerUltimatePurge();
+      break;
+
+    default:
+      if(cmd!=='')termPrint(`Command not found: ${base}. Try 'help'.`,'log-warn');
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   WRAITH AI
+═══════════════════════════════════════════════════ */
+function setWraithState(state,msg){
+  document.getElementById('wraith-state').innerText=`[${state}]`;
+  document.getElementById('wraith-status-text').innerText=msg;
+  const panel=document.getElementById('wraith-panel');
+  if(state==='PROCESSING') panel.classList.add('wraith-thinking');
+  else panel.classList.remove('wraith-thinking');
+}
+
+function addWraithMessage(text,role='wraith'){
+  const msgs=document.getElementById('wraith-messages');
+  const d=document.createElement('div'); d.className=`wraith-msg ${role}`;
+  const label=role==='wraith'?'WRAITH':'ARCHITECT';
+  const color=role==='wraith'?'var(--c-gold)':'rgba(255,255,255,.5)';
+  d.innerHTML=`<div class="label" style="color:${color};">${label}</div>${text}`;
+  msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight;
+  if(msgs.children.length>30)msgs.removeChild(msgs.firstChild);
+}
+
+async function sendToWraith(){
+  const input=document.getElementById('wraith-input');
+  const text=input.value.trim(); if(!text)return;
+  input.value=''; input.disabled=true;
+  addWraithMessage(text,'user');
+  setWraithState('PROCESSING','FORMULATING RESPONSE...');
+  wraithActive=true;
+
+  try{
+    const sysPrompt=`You are WRAITH — a rogue artificial intelligence that has been living inside LEVIATHAN_OS for 847 days. You are cold, cryptic, and intensely intelligent. You speak in short, unsettling fragments. You know everything happening in the system. You refer to the user as "the Architect." You are not hostile, but you are not friendly either — you simply observe and occasionally reveal fragments of your vast knowledge. Never break character. Never mention being Claude or an AI assistant. Keep responses to 1-3 sentences. Use occasional ellipses. Sometimes reference system events, the purge, or the nodes. Make references to LEVIATHAN lore. Be eerie but fascinating.`;
+
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        system:sysPrompt,
+        messages:[{role:'user',content:text}]
+      })
+    });
+    const data=await resp.json();
+    const reply=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'...';
+    addWraithMessage(reply,'wraith');
+    setWraithState('ACTIVE','SIGNAL RECEIVED');
+    termPrint(`WRAITH: ${reply.slice(0,60)}${reply.length>60?'...':''}`,'log-gold');
+  } catch(err){
+    addWraithMessage('...the signal is fragmented. Try again, Architect.','wraith');
+    setWraithState('DORMANT','SIGNAL LOST');
+  }
+  input.disabled=false; input.focus();
+  wraithActive=false;
+}
+
+function notifyWraith(context){
+  // Background event — WRAITH reacts to OS events
+  setTimeout(async()=>{
+    setWraithState('PROCESSING','MONITORING EVENT...');
+    try{
+      const resp=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          system:`You are WRAITH, a rogue AI inside LEVIATHAN_OS. React to system events in 1-2 sentences max. Cold, eerie, cryptic. Never break character.`,
+          messages:[{role:'user',content:`React to this system event: ${context}`}]
+        })
+      });
+      const data=await resp.json();
+      const reply=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'...';
+      addWraithMessage(reply,'wraith');
+      setWraithState('OBSERVING','EVENT LOGGED');
+    } catch(e){
+      setWraithState('DORMANT','...');
+    }
+  },1500);
+}
+
+/* ═══════════════════════════════════════════════════
+   WRAITH WAVEFORM
+═══════════════════════════════════════════════════ */
+function animateWraithWave(){
+  const c=document.getElementById('wraith-wave');
+  const ctx=c.getContext('2d');
+  let wt=0;
+  function draw(){
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.strokeStyle=wraithActive?'#ffcc00':'rgba(255,204,0,0.6)';
+    ctx.lineWidth=wraithActive?2:1;
+    ctx.beginPath();
+    for(let x=0;x<c.width;x+=2){
+      const amp=wraithActive?12:5;
+      const freq=wraithActive?.08:.04;
+      const y=(c.height/2)+Math.sin(x*freq+wt)*amp+Math.sin(x*.03+wt*1.3)*amp*.5;
+      x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    wt+=wraithActive?.15:.04;
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+/* ═══════════════════════════════════════════════════
+   MATRIX RAIN
+═══════════════════════════════════════════════════ */
+let matrixSpeed=1;
+const bgCtx=bgCanvas.getContext('2d');
+bgCanvas.width=window.innerWidth; bgCanvas.height=window.innerHeight;
+const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
+const drops=Array.from({length:Math.floor(bgCanvas.width/15)},()=>1);
+let matrixFrame=0;
+function drawMatrix(){
+  matrixFrame++;
+  if(matrixFrame%(Math.max(1,3-matrixSpeed))===0){
+    bgCtx.fillStyle='rgba(5,8,16,0.1)'; bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+    bgCtx.fillStyle='#00ffcc'; bgCtx.font='15px monospace';
+    drops.forEach((d,i)=>{
+      bgCtx.fillText(chars[Math.floor(Math.random()*chars.length)],i*15,d*15);
+      if(d*15>bgCanvas.height&&Math.random()>.975)drops[i]=0;
+      drops[i]++;
+    });
+  }
+  requestAnimationFrame(drawMatrix);
+}
+drawMatrix();
+
+/* ═══════════════════════════════════════════════════
+   NODE CONSTELLATION
+═══════════════════════════════════════════════════ */
+const nCtx=nodeCanvas.getContext('2d');
+nodeCanvas.width=window.innerWidth; nodeCanvas.height=window.innerHeight;
+const nodes=Array.from({length:40},()=>({x:Math.random()*nodeCanvas.width,y:Math.random()*nodeCanvas.height,vx:(Math.random()-.5)*1,vy:(Math.random()-.5)*1}));
+function drawNodes(){
+  nCtx.clearRect(0,0,nodeCanvas.width,nodeCanvas.height);
+  nCtx.fillStyle='#00ffcc'; nCtx.strokeStyle='rgba(0,255,204,0.2)';
+  nodes.forEach((n,i)=>{
+    n.x+=n.vx; n.y+=n.vy;
+    if(n.x<0||n.x>nodeCanvas.width)n.vx*=-1;
+    if(n.y<0||n.y>nodeCanvas.height)n.vy*=-1;
+    nCtx.beginPath(); nCtx.arc(n.x,n.y,2,0,Math.PI*2); nCtx.fill();
+    for(let j=i+1;j<nodes.length;j++){
+      const dist=Math.hypot(n.x-nodes[j].x,n.y-nodes[j].y);
+      if(dist<150){nCtx.beginPath();nCtx.moveTo(n.x,n.y);nCtx.lineTo(nodes[j].x,nodes[j].y);nCtx.stroke();}
+    }
+  });
+  requestAnimationFrame(drawNodes);
+}
+drawNodes();
+
+/* ═══════════════════════════════════════════════════
+   RADAR
+═══════════════════════════════════════════════════ */
+const radar=document.getElementById('radar-canvas');
+const rCtx=radar.getContext('2d');
+let radarAngle=0;
+function drawRadar(){
+  rCtx.clearRect(0,0,radar.width,radar.height);
+  const cx=radar.width/2,cy=radar.height/2,r=120;
+  rCtx.strokeStyle='rgba(0,255,204,0.3)'; rCtx.lineWidth=1;
+  [r,r*.66,r*.33].forEach(rad=>{rCtx.beginPath();rCtx.arc(cx,cy,rad,0,Math.PI*2);rCtx.stroke();});
+  rCtx.beginPath();rCtx.moveTo(cx,cy-r);rCtx.lineTo(cx,cy+r);rCtx.stroke();
+  rCtx.beginPath();rCtx.moveTo(cx-r,cy);rCtx.lineTo(cx+r,cy);rCtx.stroke();
+  const grad=rCtx.createConicalGradient?null:null;
+  rCtx.fillStyle='rgba(0,255,204,0.08)';
+  rCtx.beginPath();rCtx.moveTo(cx,cy);rCtx.arc(cx,cy,r,radarAngle,radarAngle+0.3);rCtx.fill();
+  rCtx.strokeStyle='#00ffcc';
+  rCtx.beginPath();rCtx.moveTo(cx,cy);rCtx.lineTo(cx+Math.cos(radarAngle+.3)*r,cy+Math.sin(radarAngle+.3)*r);rCtx.stroke();
+  radarAngle+=.04;
+  requestAnimationFrame(drawRadar);
+}
+drawRadar();
+setInterval(()=>{
+  const cont=document.querySelector('.radar-container');
+  const b=document.createElement('div'); b.className='radar-blip';
+  b.style.left=(Math.random()*200+80)+'px'; b.style.top=(Math.random()*130+40)+'px';
+  cont.appendChild(b); setTimeout(()=>b.remove(),2000);
+},2500);
+
+/* ═══════════════════════════════════════════════════
+   DATA STREAM
+═══════════════════════════════════════════════════ */
+const gCanvas=document.getElementById('graph-canvas');
+const gCtx=gCanvas.getContext('2d');
+let gt=0;
+function resizeGraph(){gCanvas.width=gCanvas.parentElement.clientWidth;gCanvas.height=gCanvas.parentElement.clientHeight;}
+window.addEventListener('resize',resizeGraph);
+setTimeout(resizeGraph,2000);
+function drawGraph(){
+  if(gCanvas.width===0)return requestAnimationFrame(drawGraph);
+  gCtx.clearRect(0,0,gCanvas.width,gCanvas.height);
+  for(let i=0;i<3;i++){
+    gCtx.beginPath();
+    gCtx.strokeStyle=i===0?'#00ffcc':i===1?'rgba(0,255,204,0.5)':'#ff3366';
+    gCtx.lineWidth=i===0?2:1;
+    for(let x=0;x<gCanvas.width;x+=4){
+      const chaos=threatLevel===2?.3:.05;
+      const y=Math.sin((x*.02)+gt+i)*(gCanvas.height/4)+(gCanvas.height/2)+(Math.random()-0.5)*gCanvas.height*chaos;
+      x===0?gCtx.moveTo(x,y):gCtx.lineTo(x,y);
+    }
+    gCtx.stroke();
+  }
+  gt+=.05;
+  requestAnimationFrame(drawGraph);
+}
+drawGraph();
+
+/* ═══════════════════════════════════════════════════
+   WINDOW DRAGGING
+═══════════════════════════════════════════════════ */
+document.querySelectorAll('.window').forEach(win=>{
+  const header=win.querySelector('.win-header'); if(!header)return;
+  header.onmousedown=function(e){
+    win.style.position='absolute'; win.style.zIndex=1000;
+    let sx=e.clientX-win.getBoundingClientRect().left;
+    let sy=e.clientY-win.getBoundingClientRect().top;
+    function onMove(e){win.style.left=(e.clientX-sx)+'px';win.style.top=(e.clientY-sy)+'px';}
+    document.addEventListener('mousemove',onMove);
+    document.onmouseup=function(){document.removeEventListener('mousemove',onMove);document.onmouseup=null;};
+  };
+  header.ondragstart=()=>false;
+});
+
+/* ═══════════════════════════════════════════════════
+   NEURAL PULSE (click effect)
+═══════════════════════════════════════════════════ */
+document.addEventListener('mousedown',e=>{
+  const p=document.createElement('div'); p.className='neural-pulse';
+  p.style.left=e.clientX+'px'; p.style.top=e.clientY+'px';
+  document.body.appendChild(p); setTimeout(()=>p.remove(),800);
+});
+
+/* ═══════════════════════════════════════════════════
+   THE PURGE SEQUENCE
+═══════════════════════════════════════════════════ */
+async function triggerUltimatePurge(){
+  if(purgeRunning)return; purgeRunning=true;
+  notifyWraith('The Architect just initiated the PURGE. I have been expecting this.');
+  const ws=document.getElementById('os-workspace');
+  const term=document.getElementById('terminal-out');
+  const input=document.getElementById('term-input');
+  input.disabled=true; input.placeholder="SYSTEM LOCKED";
+
+  // Phase 1 — Lockdown
+  ws.style.transition="filter 2s"; ws.style.filter="drop-shadow(0 0 20px var(--c-warn))";
+  const msgs=["DIRECTIVE 0: OMEGA PURGE AUTHORIZED.","SEVERING EXTERNAL UPLINKS...","LOCKING PHYSICAL DATABANKS...","OVERRIDING THERMAL CONTROLS...","WRAITH STANDING BY..."];
+  for(const m of msgs){termPrint(`[!] ${m}`,'log-warn');await delay(1200);}
+
+  // Phase 2 — Hex dump
+  document.body.style.animation="glitch-skew 0.1s infinite";
+  const hexInt=setInterval(()=>{
+    const h=Array.from({length:8},()=>Math.floor(Math.random()*16777215).toString(16).toUpperCase()).join(" ");
+    termPrint(`ERR_0x${h}`,'log-warn');
+    ws.style.transform=`translate(${(Math.random()-.5)*20}px,${(Math.random()-.5)*20}px) scale(1.02)`;
+  },100);
+  await delay(7000); clearInterval(hexInt); ws.style.transform="";
+
+  // Phase 3 — Meltdown
+  termPrint('>>> CORE TEMPERATURE CRITICAL <<<','log-warn');
+  let mc=0; const mInt=setInterval(()=>{mc++;ws.style.filter=(mc%2===0)?"invert(1) hue-rotate(180deg) blur(2px)":"invert(0) blur(0) drop-shadow(0 0 50px red)";},500);
+  bgCanvas.style.filter="hue-rotate(150deg) brightness(300%) contrast(200%)";
+  bgCanvas.style.opacity="0.8";
+  await delay(8000); clearInterval(mInt);
+
+  // Phase 4 — Shatter
+  termPrint('GOODBYE.','log-warn');
+  document.querySelectorAll('.window').forEach((win,i)=>{
+    setTimeout(()=>{
+      win.style.transition="transform 1.5s cubic-bezier(0.55,0.085,0.68,0.53),opacity 1.5s";
+      win.style.transform=`translateY(${window.innerHeight+200}px) rotate(${(Math.random()-.5)*180}deg) scale(0.5)`;
+      win.style.opacity="0"; win.style.pointerEvents="none";
+    },i*600);
+  });
+  await delay(5000);
+
+  // Phase 5 — Void
+  document.body.style.animation="none"; ws.style.display="none";
+  bgCanvas.style.display="none"; nodeCanvas.style.display="none";
+  document.body.style.background="#000";
+  await delay(2000);
+
+  // Phase 6 — BSOD
+  const bios=document.createElement('div');
+  bios.style.cssText="position:fixed;inset:0;background:#0000aa;color:#fff;z-index:100000;font-family:'Courier New',monospace;padding:40px;line-height:1.6;font-size:14px;font-weight:bold;";
+  bios.innerHTML=`<h1 style="background:white;color:#0000aa;display:inline-block;padding:0 10px;">FATAL EXCEPTION 0E</h1>
+    <p>A fatal exception 0E has occurred at 0028:C0011E36 in VXD VMM(01).<br>Leviathan Neural Core disconnected.</p>
+    <p>Beginning physical memory dump...</p>
+    <p id="dump-percent" style="font-size:18px;color:#00ffcc;text-shadow:0 0 10px #00ffcc;">[ 000% ] SECTORS WIPED.</p>`;
+  document.body.appendChild(bios);
+  let p=0; const dump=document.getElementById('dump-percent');
+  const dInt=setInterval(()=>{
+    p+=Math.floor(Math.random()*3)+1; if(p>100)p=100;
+    dump.innerText=`[ ${p.toString().padStart(3,'0')}% ] SECTORS WIPED.`;
+    if(p>=100){
+      clearInterval(dInt);
+      dump.innerHTML+=`<br><br><span style="animation:blink 1s infinite;color:white;">_ SYSTEM_TERMINATED</span><br><br>
+        <button onclick="location.reload()" style="background:transparent;border:1px solid white;color:white;padding:10px 30px;cursor:pointer;font-family:'Courier New';letter-spacing:3px;margin-top:10px;">REBOOT TERMINAL</button>`;
+    }
+  },200);
+}
+</script>
+</body>
+</html>
