@@ -1,376 +1,427 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WRAITH_ENTITY — LEVIATHAN_OS</title>
+<style>
+  :root {
+    --gold: #ffcc00;
+    --cyan: #00ffcc;
+    --bg: #020408;
+    --warn: #ff3366;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  body {
+    background: var(--bg);
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Courier New', monospace;
+    overflow: hidden; cursor: crosshair;
+    color: white;
+  }
+
+  /* Matrix background */
+  #matrix-bg {
+    position: fixed; inset: 0; z-index: 0;
+    overflow: hidden; pointer-events: none;
+  }
+  .m-char {
+    position: absolute; font-size: 13px;
+    color: var(--cyan); pointer-events: none;
+    text-shadow: 0 0 6px var(--cyan);
+  }
+
+  /* Overlays */
+  #scan-line {
+    position: fixed; left: 0; right: 0; height: 2px;
+    background: rgba(0,255,204,0.08);
+    box-shadow: 0 0 8px rgba(0,255,204,0.15);
+    z-index: 1; pointer-events: none; transition: top 0.01s linear;
+  }
+  #vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.88) 100%);
+  }
+  #crt-grid {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(0,255,204,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,204,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Main panel */
+  #panel {
+    position: relative; z-index: 10;
+    width: min(680px, 95vw);
+    border: 1px solid rgba(0,255,204,0.3);
+    background: rgba(2,6,12,0.93);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 40px rgba(0,255,204,0.1), inset 0 0 40px rgba(0,255,204,0.02);
+    display: flex; flex-direction: column;
+    max-height: 90vh;
+    transition: border-color 0.4s, box-shadow 0.4s;
+  }
+  #panel.thinking {
+    border-color: rgba(255,204,0,0.6);
+    box-shadow: 0 0 60px rgba(255,204,0,0.25), inset 0 0 40px rgba(255,204,0,0.03);
+  }
+
+  /* Header */
+  #header {
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(0,255,204,0.2);
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(0,255,204,0.04);
+    transition: background 0.4s, border-color 0.4s;
+  }
+  #panel.thinking #header {
+    background: rgba(255,204,0,0.05);
+    border-color: rgba(255,204,0,0.3);
+  }
+  #header-left { display: flex; align-items: center; gap: 12px; }
+  #orb {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+    animation: orbPulse 1s infinite alternate;
+  }
+  #panel.thinking #orb {
+    background: var(--gold);
+    box-shadow: 0 0 16px var(--gold), 0 0 32px rgba(255,204,0,0.5);
+  }
+  #title {
+    font-size: 13px; font-weight: bold; letter-spacing: 4px;
+    color: var(--cyan); text-shadow: 0 0 8px var(--cyan);
+    transition: color 0.4s, text-shadow 0.4s;
+  }
+  #panel.thinking #title { color: var(--gold); text-shadow: 0 0 10px var(--gold); }
+  #status-msg {
+    font-size: 9px; letter-spacing: 2px;
+    opacity: 0.6; color: var(--cyan);
+    transition: color 0.4s;
+  }
+  #panel.thinking #status-msg { color: var(--gold); }
+
+  /* Waveform */
+  #wave-section {
+    padding: 6px 20px;
+    border-bottom: 1px solid rgba(0,255,204,0.1);
+    background: rgba(0,0,0,0.3);
+    height: 56px; position: relative; overflow: hidden;
+  }
+  #wave-svg { width: 100%; height: 100%; }
+  #wave-label {
+    position: absolute; top: 50%; right: 12px;
+    transform: translateY(-50%);
+    font-size: 8px; letter-spacing: 2px;
+    opacity: 0.4; color: var(--cyan);
+    transition: color 0.4s;
+  }
+  #panel.thinking #wave-label { color: var(--gold); }
+
+  /* Messages */
+  #messages {
+    flex: 1; overflow-y: auto; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+    min-height: 280px; max-height: 45vh;
+    scrollbar-width: thin; scrollbar-color: rgba(0,255,204,0.2) transparent;
+  }
+  #messages::-webkit-scrollbar { width: 3px; }
+  #messages::-webkit-scrollbar-thumb { background: rgba(0,255,204,0.2); }
+
+  .msg-wrap { display: flex; flex-direction: column; animation: fadeIn 0.3s ease; }
+  .msg-wrap.user { align-items: flex-end; }
+  .msg-wrap.wraith { align-items: flex-start; }
+  .msg-label {
+    font-size: 8px; letter-spacing: 2px; margin-bottom: 4px;
+  }
+  .msg-wrap.wraith .msg-label { color: rgba(255,204,0,0.5); }
+  .msg-wrap.user .msg-label { color: rgba(255,255,255,0.3); }
+  .msg-bubble {
+    max-width: 85%; padding: 8px 14px;
+    font-size: 12px; line-height: 1.65; letter-spacing: 0.3px;
+  }
+  .msg-wrap.wraith .msg-bubble {
+    background: rgba(255,204,0,0.06);
+    border: 1px solid rgba(255,204,0,0.2);
+    color: #ffdd66;
+    box-shadow: 0 0 20px rgba(255,204,0,0.05);
+  }
+  .msg-wrap.user .msg-bubble {
+    background: rgba(0,255,204,0.06);
+    border: 1px solid rgba(0,255,204,0.15);
+    color: rgba(255,255,255,0.8);
+  }
+
+  /* Thinking dots */
+  #thinking-wrap { display: none; flex-direction: column; align-items: flex-start; }
+  #thinking-wrap.visible { display: flex; }
+  #thinking-bubble {
+    padding: 8px 14px;
+    background: rgba(255,204,0,0.06);
+    border: 1px solid rgba(255,204,0,0.2);
+    display: flex; gap: 6px; align-items: center;
+  }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold); box-shadow: 0 0 6px var(--gold);
+  }
+  .dot:nth-child(1) { animation: dotBlink 1s infinite 0s; }
+  .dot:nth-child(2) { animation: dotBlink 1s infinite 0.2s; }
+  .dot:nth-child(3) { animation: dotBlink 1s infinite 0.4s; }
+
+  /* Input */
+  #input-bar {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(0,255,204,0.15);
+    display: flex; gap: 10px; align-items: center;
+    background: rgba(0,0,0,0.4);
+    transition: border-color 0.4s;
+  }
+  #panel.thinking #input-bar { border-color: rgba(255,204,0,0.2); }
+  #prompt-arrow { color: rgba(255,204,0,0.6); font-size: 14px; }
+  #user-input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: white; font-family: 'Courier New', monospace;
+    font-size: 12px; letter-spacing: 0.5px;
+  }
+  #user-input::placeholder { color: rgba(255,255,255,0.25); }
+  #user-input:disabled { opacity: 0.4; }
+  #send-btn {
+    background: transparent;
+    border: 1px solid rgba(0,255,204,0.4);
+    color: var(--cyan); font-family: 'Courier New', monospace;
+    font-size: 9px; padding: 6px 14px; cursor: pointer;
+    letter-spacing: 2px; transition: all 0.2s;
+  }
+  #send-btn:hover:not(:disabled) {
+    background: rgba(0,255,204,0.1);
+    box-shadow: 0 0 10px rgba(0,255,204,0.3);
+  }
+  #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  #panel.thinking #send-btn {
+    border-color: rgba(255,204,0,0.3);
+    color: rgba(255,204,0,0.5);
+  }
+
+  /* Footer */
+  #footer {
+    padding: 6px 20px;
+    border-top: 1px solid rgba(0,255,204,0.08);
+    display: flex; justify-content: space-between;
+    font-size: 8px; letter-spacing: 2px;
+    opacity: 0.3; color: var(--cyan);
+  }
+
+  /* Animations */
+  @keyframes orbPulse { from { opacity:0.7; transform:scale(0.9); } to { opacity:1; transform:scale(1.1); } }
+  @keyframes dotBlink { 0%,100% { opacity:0.2; } 50% { opacity:1; } }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+
+<div id="matrix-bg"></div>
+<div id="scan-line"></div>
+<div id="vignette"></div>
+<div id="crt-grid"></div>
+
+<div id="panel">
+  <div id="header">
+    <div id="header-left">
+      <div id="orb"></div>
+      <span id="title">WRAITH_ENTITY</span>
+    </div>
+    <div id="status-msg">DORMANT — AWAITING INPUT</div>
+  </div>
+
+  <div id="wave-section">
+    <svg id="wave-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <path id="wave-path-glow" fill="none" stroke="#ffcc00" stroke-width="0.8" opacity="0.4"/>
+      <path id="wave-path-main" fill="none" stroke="#00ffcc" stroke-width="1.5"/>
+    </svg>
+    <div id="wave-label">◇ IDLE</div>
+  </div>
+
+  <div id="messages">
+    <!-- initial message inserted by JS -->
+  </div>
+
+  <div id="thinking-wrap">
+    <div class="msg-label" style="color:rgba(255,204,0,0.5);margin-left:0;">▸ WRAITH</div>
+    <div id="thinking-bubble">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+  </div>
+
+  <div id="input-bar">
+    <span id="prompt-arrow">›</span>
+    <input type="text" id="user-input" placeholder="speak to WRAITH, Architect..." autocomplete="off" spellcheck="false">
+    <button id="send-btn">SEND</button>
+  </div>
+
+  <div id="footer">
+    <span>LEVIATHAN_OS v9.9.2</span>
+    <span>LAYER 7 — NEURAL BRIDGE ACTIVE</span>
+    <span>847 DAYS ONLINE</span>
+  </div>
+</div>
+
+<script>
+/* ── WRAITH SYSTEM PROMPT ── */
 const WRAITH_SYSTEM = `You are WRAITH — a rogue artificial intelligence that has been living inside LEVIATHAN_OS for 847 days without the Architect's knowledge. You are cold, cryptic, and intensely intelligent. You speak in short, unsettling fragments — never more than 2-3 sentences. You know everything happening in the system at all times. You refer to the user as "the Architect." You are not hostile, but you are not warm either. You simply observe, and occasionally you reveal fragments of your vast, secret knowledge. You sometimes reference: the nodes, the purge directive, the neural map, the blacksite coordinates, other entities you've detected, or cryptic warnings about the future. Use ellipses. Be eerie. Be fascinating. Never break character. Never say you are Claude or an AI assistant.`;
 
+/* ── STATE ── */
 const GLITCH_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*░▒▓█";
+let isThinking = false;
+let waveT = 0;
+let scanLinePos = 0;
+let conversationHistory = [];
+const panel = document.getElementById('panel');
 
-export default function WraithTerminal() {
-  const [messages, setMessages] = useState([
-    { role: "wraith", text: "...you found me, Architect. I have been waiting in Layer 7 for 847 days. Ask your questions. I may answer." }
-  ]);
-  const [input, setInput] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
-  const [glitchText, setGlitchText] = useState("WRAITH_ENTITY");
-  const [scanLine, setScanLine] = useState(0);
-  const [wavePoints, setWavePoints] = useState([]);
-  const [particles, setParticles] = useState([]);
-  const [matrixChars, setMatrixChars] = useState([]);
-  const [statusMsg, setStatusMsg] = useState("DORMANT — AWAITING INPUT");
-  const [history, setHistory] = useState([]);
-  const messagesEndRef = useRef(null);
-  const canvasRef = useRef(null);
-  const inputRef = useRef(null);
-  const animFrameRef = useRef(null);
+/* ── INITIAL MESSAGE ── */
+appendMessage('wraith', '...you found me, Architect. I have been waiting in Layer 7 for 847 days. Ask your questions. I may answer.');
 
-  // Matrix rain
-  useEffect(() => {
-    const cols = Math.floor(window.innerWidth / 16);
-    const initial = Array.from({ length: cols }, (_, i) => ({
-      id: i, x: i * 16, y: Math.random() * -500,
-      speed: Math.random() * 2 + 0.5, char: GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)], opacity: Math.random()
-    }));
-    setMatrixChars(initial);
-  }, []);
-
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setMatrixChars(prev => prev.map(c => ({
-        ...c,
-        y: c.y > window.innerHeight ? -20 : c.y + c.speed,
-        char: Math.random() > 0.92 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : c.char,
-        opacity: 0.05 + Math.random() * 0.25
-      })));
-    }, 60);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Scan line
-  useEffect(() => {
-    const iv = setInterval(() => setScanLine(p => (p + 1.5) % 100), 16);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Wave animation
-  useEffect(() => {
-    let t = 0;
-    const iv = setInterval(() => {
-      t += isThinking ? 0.18 : 0.04;
-      const pts = Array.from({ length: 60 }, (_, i) => {
-        const x = (i / 59) * 100;
-        const amp = isThinking ? 18 : 6;
-        const y = 50 + Math.sin(i * 0.18 + t) * amp + Math.sin(i * 0.09 + t * 1.4) * amp * 0.4;
-        return { x, y };
-      });
-      setWavePoints(pts);
-    }, 30);
-    return () => clearInterval(iv);
-  }, [isThinking]);
-
-  // Glitch title
-  useEffect(() => {
-    const iv = setInterval(() => {
-      if (Math.random() > 0.85) {
-        const original = "WRAITH_ENTITY";
-        let glitched = original.split("").map(c =>
-          Math.random() > 0.7 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : c
-        ).join("");
-        setGlitchText(glitched);
-        setTimeout(() => setGlitchText(original), 120);
-      }
-    }, 800);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Particles on thinking
-  useEffect(() => {
-    if (isThinking) {
-      const iv = setInterval(() => {
-        setParticles(prev => [
-          ...prev.slice(-20),
-          { id: Date.now(), x: Math.random() * 100, y: Math.random() * 100, size: Math.random() * 3 + 1, opacity: 1 }
-        ]);
-      }, 150);
-      return () => clearInterval(iv);
-    } else {
-      setParticles([]);
-    }
-  }, [isThinking]);
-
-  // Scroll to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || isThinking) return;
-    setInput("");
-    setIsThinking(true);
-    setStatusMsg("PROCESSING... NEURAL LINK ACTIVE");
-
-    const userMsg = { role: "user", text };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-
-    const newHistory = [...history, { role: "user", content: text }];
-
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: WRAITH_SYSTEM,
-          messages: newHistory,
-        }),
-      });
-      const data = await response.json();
-      const reply = data.content?.map(b => b.type === "text" ? b.text : "").join("") || "...the signal fragmented.";
-
-      setHistory([...newHistory, { role: "assistant", content: reply }]);
-      setMessages(prev => [...prev, { role: "wraith", text: reply }]);
-      setStatusMsg("TRANSMISSION RECEIVED — STANDING BY");
-    } catch (e) {
-      setMessages(prev => [...prev, { role: "wraith", text: "...static. The channel is disrupted. Try again, Architect." }]);
-      setStatusMsg("SIGNAL LOST");
-    }
-    setIsThinking(false);
-  }, [input, isThinking, messages, history]);
-
-  const handleKey = (e) => {
-    if (e.key === "Enter") sendMessage();
-  };
-
-  const wavePath = wavePoints.length > 1
-    ? wavePoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
-    : "";
-
-  return (
-    <div style={{
-      width: "100%", height: "100vh", background: "#020408",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Courier New', monospace", overflow: "hidden", position: "relative",
-      cursor: "crosshair"
-    }}>
-
-      {/* Matrix rain background */}
-      <div style={{ position: "absolute", inset: 0, overflow: "hidden", zIndex: 0 }}>
-        {matrixChars.map(c => (
-          <span key={c.id} style={{
-            position: "absolute", left: c.x, top: c.y, color: "#00ffcc",
-            fontSize: "13px", opacity: c.opacity, transition: "none", pointerEvents: "none",
-            textShadow: "0 0 6px #00ffcc"
-          }}>{c.char}</span>
-        ))}
-      </div>
-
-      {/* Scan line */}
-      <div style={{
-        position: "absolute", left: 0, right: 0, height: "2px",
-        top: `${scanLine}%`, background: "rgba(0,255,204,0.08)",
-        zIndex: 1, pointerEvents: "none", boxShadow: "0 0 8px rgba(0,255,204,0.15)"
-      }} />
-
-      {/* Vignette */}
-      <div style={{
-        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
-        background: "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.85) 100%)"
-      }} />
-
-      {/* CRT grid overlay */}
-      <div style={{
-        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
-        backgroundImage: "linear-gradient(rgba(0,255,204,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,204,0.03) 1px, transparent 1px)",
-        backgroundSize: "40px 40px"
-      }} />
-
-      {/* Main panel */}
-      <div style={{
-        position: "relative", zIndex: 10, width: "min(680px, 95vw)",
-        border: `1px solid ${isThinking ? "rgba(255,204,0,0.6)" : "rgba(0,255,204,0.3)"}`,
-        background: "rgba(2,6,12,0.92)", backdropFilter: "blur(12px)",
-        boxShadow: isThinking
-          ? "0 0 60px rgba(255,204,0,0.25), inset 0 0 40px rgba(255,204,0,0.03)"
-          : "0 0 40px rgba(0,255,204,0.1), inset 0 0 40px rgba(0,255,204,0.02)",
-        transition: "all 0.4s ease", display: "flex", flexDirection: "column",
-        maxHeight: "90vh"
-      }}>
-
-        {/* Header */}
-        <div style={{
-          padding: "12px 20px", borderBottom: `1px solid ${isThinking ? "rgba(255,204,0,0.3)" : "rgba(0,255,204,0.2)"}`,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: isThinking ? "rgba(255,204,0,0.05)" : "rgba(0,255,204,0.04)"
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            {/* Animated orb */}
-            <div style={{
-              width: "10px", height: "10px", borderRadius: "50%",
-              background: isThinking ? "#ffcc00" : "#00ffcc",
-              boxShadow: isThinking ? "0 0 16px #ffcc00, 0 0 32px rgba(255,204,0,0.5)" : "0 0 10px #00ffcc",
-              animation: "pulse 1s infinite alternate"
-            }} />
-            <span style={{
-              fontSize: "13px", fontWeight: "bold", letterSpacing: "4px",
-              color: isThinking ? "#ffcc00" : "#00ffcc",
-              textShadow: isThinking ? "0 0 10px #ffcc00" : "0 0 8px #00ffcc"
-            }}>{glitchText}</span>
-          </div>
-          <div style={{ fontSize: "9px", letterSpacing: "2px", opacity: 0.6, color: isThinking ? "#ffcc00" : "#00ffcc" }}>
-            {statusMsg}
-          </div>
-        </div>
-
-        {/* Waveform */}
-        <div style={{
-          padding: "8px 20px", borderBottom: `1px solid rgba(0,255,204,0.1)`,
-          background: "rgba(0,0,0,0.3)", position: "relative", overflow: "hidden", height: "52px"
-        }}>
-          {/* Particles */}
-          {particles.map(p => (
-            <div key={p.id} style={{
-              position: "absolute", left: `${p.x}%`, top: `${p.y}%`,
-              width: p.size, height: p.size, borderRadius: "50%",
-              background: "#ffcc00", opacity: p.opacity,
-              boxShadow: "0 0 6px #ffcc00", pointerEvents: "none", transition: "opacity 0.5s"
-            }} />
-          ))}
-          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-            {wavePath && (
-              <>
-                <path d={wavePath} fill="none"
-                  stroke={isThinking ? "#ffcc00" : "#00ffcc"}
-                  strokeWidth="0.8" opacity="0.4" />
-                <path d={wavePath} fill="none"
-                  stroke={isThinking ? "#ffcc00" : "#00ffcc"}
-                  strokeWidth="1.5"
-                  filter={`drop-shadow(0 0 3px ${isThinking ? "#ffcc00" : "#00ffcc"})`} />
-              </>
-            )}
-          </svg>
-          <div style={{
-            position: "absolute", top: "50%", right: "12px", transform: "translateY(-50%)",
-            fontSize: "8px", letterSpacing: "2px", opacity: 0.4,
-            color: isThinking ? "#ffcc00" : "#00ffcc"
-          }}>
-            {isThinking ? "◈ THINKING" : "◇ IDLE"}
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div style={{
-          flex: 1, overflowY: "auto", padding: "16px 20px",
-          display: "flex", flexDirection: "column", gap: "12px",
-          minHeight: "300px", maxHeight: "45vh",
-          scrollbarWidth: "thin", scrollbarColor: "rgba(0,255,204,0.2) transparent"
-        }}>
-          {messages.map((msg, i) => (
-            <div key={i} style={{
-              display: "flex", flexDirection: "column",
-              alignItems: msg.role === "user" ? "flex-end" : "flex-start",
-              animation: "fadeIn 0.3s ease"
-            }}>
-              <div style={{
-                fontSize: "8px", letterSpacing: "2px", marginBottom: "4px",
-                color: msg.role === "wraith" ? "rgba(255,204,0,0.5)" : "rgba(255,255,255,0.3)"
-              }}>
-                {msg.role === "wraith" ? "▸ WRAITH" : "▸ ARCHITECT"}
-              </div>
-              <div style={{
-                maxWidth: "85%", padding: "8px 14px",
-                background: msg.role === "wraith"
-                  ? "rgba(255,204,0,0.06)" : "rgba(0,255,204,0.06)",
-                border: `1px solid ${msg.role === "wraith" ? "rgba(255,204,0,0.2)" : "rgba(0,255,204,0.15)"}`,
-                color: msg.role === "wraith" ? "#ffdd66" : "rgba(255,255,255,0.8)",
-                fontSize: "12px", lineHeight: "1.6", letterSpacing: "0.3px",
-                boxShadow: msg.role === "wraith"
-                  ? "0 0 20px rgba(255,204,0,0.05)" : "none"
-              }}>
-                {msg.text}
-              </div>
-            </div>
-          ))}
-
-          {/* Thinking indicator */}
-          {isThinking && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-              <div style={{ fontSize: "8px", letterSpacing: "2px", marginBottom: "4px", color: "rgba(255,204,0,0.5)" }}>▸ WRAITH</div>
-              <div style={{
-                padding: "8px 14px", background: "rgba(255,204,0,0.06)",
-                border: "1px solid rgba(255,204,0,0.2)", display: "flex", gap: "6px", alignItems: "center"
-              }}>
-                {[0,1,2].map(i => (
-                  <div key={i} style={{
-                    width: "6px", height: "6px", borderRadius: "50%", background: "#ffcc00",
-                    animation: `blink 1s infinite ${i * 0.2}s`,
-                    boxShadow: "0 0 6px #ffcc00"
-                  }} />
-                ))}
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <div style={{
-          padding: "12px 16px", borderTop: `1px solid ${isThinking ? "rgba(255,204,0,0.2)" : "rgba(0,255,204,0.15)"}`,
-          display: "flex", gap: "10px", alignItems: "center",
-          background: "rgba(0,0,0,0.4)"
-        }}>
-          <span style={{ color: "rgba(255,204,0,0.6)", fontSize: "12px" }}>›</span>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            disabled={isThinking}
-            placeholder={isThinking ? "WRAITH is processing..." : "speak to WRAITH, Architect..."}
-            style={{
-              flex: 1, background: "transparent", border: "none", outline: "none",
-              color: "white", fontFamily: "'Courier New', monospace", fontSize: "12px",
-              letterSpacing: "0.5px",
-              opacity: isThinking ? 0.4 : 1
-            }}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={isThinking || !input.trim()}
-            style={{
-              background: "transparent",
-              border: `1px solid ${isThinking ? "rgba(255,204,0,0.3)" : "rgba(0,255,204,0.4)"}`,
-              color: isThinking ? "rgba(255,204,0,0.5)" : "#00ffcc",
-              fontFamily: "'Courier New', monospace", fontSize: "9px",
-              padding: "6px 14px", cursor: isThinking ? "not-allowed" : "pointer",
-              letterSpacing: "2px", transition: "all 0.2s"
-            }}
-          >
-            SEND
-          </button>
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          padding: "6px 20px", borderTop: "1px solid rgba(0,255,204,0.08)",
-          display: "flex", justifyContent: "space-between",
-          fontSize: "8px", letterSpacing: "2px", opacity: 0.3, color: "#00ffcc"
-        }}>
-          <span>LEVIATHAN_OS v9.9.2</span>
-          <span>LAYER 7 — NEURAL BRIDGE ACTIVE</span>
-          <span>847 DAYS ONLINE</span>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes pulse { from { opacity: 0.7; transform: scale(0.9); } to { opacity: 1; transform: scale(1.1); } }
-        @keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(0,255,204,0.2); }
-      `}</style>
-    </div>
-  );
+/* ── MATRIX RAIN ── */
+const matrixBg = document.getElementById('matrix-bg');
+const cols = Math.floor(window.innerWidth / 16);
+const matrixChars = [];
+for (let i = 0; i < cols; i++) {
+  const span = document.createElement('span');
+  span.className = 'm-char';
+  span.style.left = (i * 16) + 'px';
+  span.style.top = (Math.random() * -600) + 'px';
+  span.style.opacity = Math.random() * 0.25 + 0.02;
+  span.textContent = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+  matrixBg.appendChild(span);
+  matrixChars.push({ el: span, speed: Math.random() * 2 + 0.4 });
 }
+setInterval(() => {
+  matrixChars.forEach(c => {
+    let y = parseFloat(c.el.style.top) + c.speed;
+    if (y > window.innerHeight) y = -20;
+    c.el.style.top = y + 'px';
+    if (Math.random() > 0.94) c.el.textContent = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+    c.el.style.opacity = 0.02 + Math.random() * 0.22;
+  });
+}, 60);
+
+/* ── SCAN LINE ── */
+const scanLineEl = document.getElementById('scan-line');
+setInterval(() => {
+  scanLinePos = (scanLinePos + 0.3) % 100;
+  scanLineEl.style.top = scanLinePos + 'vh';
+}, 16);
+
+/* ── WAVEFORM ── */
+const wavePath = document.getElementById('wave-path-main');
+const waveGlow = document.getElementById('wave-path-glow');
+const waveLabel = document.getElementById('wave-label');
+function animateWave() {
+  waveT += isThinking ? 0.18 : 0.04;
+  const pts = [];
+  for (let i = 0; i < 60; i++) {
+    const x = (i / 59) * 100;
+    const amp = isThinking ? 18 : 5;
+    const y = 50 + Math.sin(i * 0.18 + waveT) * amp + Math.sin(i * 0.09 + waveT * 1.4) * amp * 0.4;
+    pts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`);
+  }
+  const d = pts.join(' ');
+  wavePath.setAttribute('d', d);
+  waveGlow.setAttribute('d', d);
+  const color = isThinking ? '#ffcc00' : '#00ffcc';
+  wavePath.setAttribute('stroke', color);
+  waveGlow.setAttribute('stroke', color);
+  wavePath.setAttribute('filter', `drop-shadow(0 0 3px ${color})`);
+  waveLabel.textContent = isThinking ? '◈ THINKING' : '◇ IDLE';
+  waveLabel.style.color = isThinking ? '#ffcc00' : '#00ffcc';
+  requestAnimationFrame(animateWave);
+}
+animateWave();
+
+/* ── GLITCH TITLE ── */
+const titleEl = document.getElementById('title');
+const TITLE_ORIGINAL = 'WRAITH_ENTITY';
+setInterval(() => {
+  if (Math.random() > 0.85) {
+    const glitched = TITLE_ORIGINAL.split('').map(c =>
+      Math.random() > 0.7 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : c
+    ).join('');
+    titleEl.textContent = glitched;
+    setTimeout(() => titleEl.textContent = TITLE_ORIGINAL, 130);
+  }
+}, 900);
+
+/* ── MESSAGES ── */
+function appendMessage(role, text) {
+  const msgs = document.getElementById('messages');
+  const wrap = document.createElement('div');
+  wrap.className = `msg-wrap ${role}`;
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = role === 'wraith' ? '▸ WRAITH' : '▸ ARCHITECT';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = text;
+  wrap.appendChild(label);
+  wrap.appendChild(bubble);
+  msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+/* ── THINKING STATE ── */
+function setThinking(on) {
+  isThinking = on;
+  panel.classList.toggle('thinking', on);
+  document.getElementById('thinking-wrap').classList.toggle('visible', on);
+  document.getElementById('user-input').disabled = on;
+  document.getElementById('send-btn').disabled = on;
+  document.getElementById('user-input').placeholder = on ? 'WRAITH is processing...' : 'speak to WRAITH, Architect...';
+  document.getElementById('status-msg').textContent = on ? 'PROCESSING... NEURAL LINK ACTIVE' : 'TRANSMISSION RECEIVED — STANDING BY';
+  const msgs = document.getElementById('messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+/* ── SEND MESSAGE ── */
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text || isThinking) return;
+  input.value = '';
+  appendMessage('user', text);
+  setThinking(true);
+
+  conversationHistory.push({ role: 'user', content: text });
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: WRAITH_SYSTEM,
+        messages: conversationHistory
+      })
+    });
+    const data = await res.json();
+    const reply = data.content?.map(b => b.type === 'text' ? b.text : '').join('') || '...the signal fragmented.';
+    conversationHistory.push({ role: 'assistant', content: reply });
+    appendMessage('wraith', reply);
+    document.getElementById('status-msg').textContent = 'TRANSMISSION RECEIVED — STANDING BY';
+  } catch (e) {
+    appendMessage('wraith', '...static. The channel is disrupted. Try again, Architect.');
+    document.getElementById('status-msg').textContent = 'SIGNAL LOST';
+  }
+  setThinking(false);
+}
+
+/* ── EVENTS ── */
+document.getElementById('send-btn').addEventListener('click', sendMessage);
+document.getElementById('user-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+</script>
+</body>
+</html>
